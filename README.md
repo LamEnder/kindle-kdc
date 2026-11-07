@@ -328,3 +328,13 @@ values switch the panel rails), the fixed build sent only DU/DU4 updates.
 | `scripts/kdc-session.sh` | Pause / resume the Kindle UI across commands |
 | `scripts/kdc-pulse.sh` | Install (`install N [L]`) / restore the pulse waveform on the device |
 | `tests/test_host.c` | Waveform and controller tests on the simulator |
+
+## License
+
+MIT, see [LICENSE](LICENSE). Exception: `src/mxcfb_pw4.h` holds interface
+definitions copied from the Linux kernel's `mxcfb.h` (© Freescale) and stays
+under GPL-2.0-or-later.
+
+kdc writes a custom waveform into the panel controller at runtime. Use at your
+own risk: custom waveforms and fast refresh can cause image retention, and
+their long-term effect on the panel is unknown.

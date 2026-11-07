@@ -1,4 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
+ * Copyright (C) 2013-2015 Freescale Semiconductor, Inc. All Rights Reserved
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
  * mxcfb ioctl ABI of the Kindle PaperWhite 4 EPDC driver.
  *
  * Copied from include/uapi/linux/mxcfb.h of Amazon's GPL release
