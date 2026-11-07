@@ -1,0 +1,27 @@
+# kdc calibration: Kindle PaperWhite 4 (ED060KC4 panel, fw 5.18.1.1.1)
+# 2026-11-07, kdc-cal at 18-19 C, 1-frame pulses (kdc-pulse.sh install 1).
+install 1
+
+# Response curves (state model, used when present). Levels 0=K .. 3=W,
+# n = pulses:  dark(n) = 3 exp(-(n/TAU)^P)  from white,
+#              light(n) = 3 (1 - exp(-(n/TAU)^P))  from black.
+# Fitted to stage-1 ladder photos (rms 0.09 / 0.10 levels); predicts the
+# stage-2 ladders (from D and L) within ~0.2-0.3 levels.
+dark   11.1 1.02
+light   6.3 1.24
+
+# Per-level pulse steps (preferred over the curves above when present):
+# levels moved by one pulse at levels 0, 0.5, 1, 1.5, 2, 2.5, 3. Fitted jointly
+# to all six ladders (W>, K>, D>W, D>K, L>W, L>K): rms 0.137 levels.
+# Darkening is weak near black with 1-frame pulses (0.02 level/pulse at 0.5).
+dark_steps  0.000 0.018 0.096 0.161 0.295 0.245 0.163
+light_steps 0.228 0.350 0.377 0.350 0.298 0.050 0.000
+
+# Dose matrix (dose-counting fallback). Pulses per transition.
+# Rows: from K D L W. Columns: to K D L W. Darkening is ~3x slower than
+# lightening with short pulses.
+#    K   D   L   W
+K    0   3   6  10
+D   20   0   3   9
+L   22   4   0   8
+W   30  11   5   0

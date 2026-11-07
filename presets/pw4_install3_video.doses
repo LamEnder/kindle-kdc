@@ -1,0 +1,11 @@
+# kdc preset for black/white video: Kindle PaperWhite 4, kdc-pulse.sh install 3
+# Dither mode with dose counting (vectorized planner, cheap on the single core).
+# Budgets: W->K 6, K->W 6 scans of 3-frame pulses (4 at 18 C) - visually
+# checked clean with full black on 2026-11-07 (bounce demo).
+# The gray doses below are InkBoy's defaults, NOT calibrated for install 3.
+install 3
+#    K   D   L   W
+K    0   2   4   6
+D    4   0   1   6
+L    4   1   0   5
+W    6   3   2   0

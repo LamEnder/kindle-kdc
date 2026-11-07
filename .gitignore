@@ -1,0 +1,13 @@
+# build output
+build/
+__pycache__/
+*.pgm
+
+# Not for publishing:
+# - device/: the Kindle's stock waveform (proprietary panel data) and
+#   calibration photos
+# - Amazon's GPL source tarball (download it from Amazon instead)
+device/
+*.wrf
+*.wrf.gz
+Kindle_src_*.tar.gz

@@ -1,0 +1,24 @@
+# kdc calibration: Kindle PaperWhite 4 (ED060KC4 panel, fw 5.18.1.1.1)
+# DUAL pulses: kdc-pulse.sh install 1 6
+#   short = 1 frame (DU4 slot), long = 6 frames at 25 C, 9 at 18 C (DU slot).
+# 2026-11-07, kdc-cal (stage1/stage2, short and --long) at 18 C.
+install 1 6
+
+# Short pulse steps (levels moved by one pulse at levels 0, .5, .. 3), joint
+# fit to the six short ladders, rms 0.137 levels.
+dark_steps  0.000 0.018 0.096 0.161 0.295 0.245 0.163
+light_steps 0.228 0.350 0.377 0.350 0.298 0.050 0.000
+
+# Long pulse steps, fit to the six long ladders (stage-2 pre-dose simulated
+# with the short steps), rms 0.044 levels. One long pulse: W -> 0.85, K -> 2.6,
+# D or L -> W. Darkening stalls at a floor of ~0.25 (pulses cannot reach the
+# GC16 black); the model stops there too.
+dark_long_steps  0.000 0.016 0.741 1.497 1.628 1.900 2.147
+light_long_steps 2.575 2.400 2.100 1.500 1.000 0.378 0.000
+
+# Dose matrix (dose-counting fallback, short pulses).
+#    K   D   L   W
+K    0   3   6  10
+D   20   0   3   9
+L   22   4   0   8
+W   30  11   5   0
