@@ -367,6 +367,13 @@ anywhere), `settle_tol X`, `rail_tol X` (black/white stop tolerance; default
 - If the battery/temperature guard trips mid-session, kdc runs a clean and stops
   driving. `kdc_frame_publish` then returns `KDC_ERR_STOPPED`.
 
+## Other Kindles
+
+The Paperwhite 5 (11th gen, MediaTek MT8110 `hwtcon` driver) has everything
+the approach needs (runtime waveform reload, per-pixel old/new lookup, mxcfb
+ioctls) but a different waveform format and update struct. See
+[`docs/pw5-port.md`](docs/pw5-port.md) for the analysis and a port plan.
+
 ## Files
 
 | Path | What |
