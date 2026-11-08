@@ -17,6 +17,27 @@ light   6.3 1.24
 dark_steps  0.000 0.018 0.096 0.161 0.295 0.245 0.163
 light_steps 0.228 0.350 0.377 0.350 0.298 0.050 0.000
 
+# History (route) corrections, levels: "route O V B" = a pixel that went from
+# shade O to V and back gets B added to its estimated level (B < 0: it comes
+# back too dark, drive it lighter). Fitted with tools/cal/route_fit.py from
+# transition-test photos (2026-11-08, 18 C). Returns to K stay 0: short
+# pulses stop at the black floor (~0.25 level above GC16 black) either way.
+# Transition test, 3 rounds: mean |trail-gap| over the 9 non-K rows 6.4 -> 2.7
+# -> 1.9 (all 12 rows: 8.8 -> 6.4 -> 6.7, the K band is the floor); the D>K>D
+# streak (black crossing dark gray) -13 -> +4 / -6.5 (run-to-run noise ~5).
+route K D +0.00
+route K L +0.00
+route K W +0.00
+route D K -0.18
+route D L -0.05
+route D W -0.06
+route L K +0.49
+route L D +0.39
+route L W +0.12
+route W K -0.02
+route W D -0.06
+route W L +0.04
+
 # Dose matrix (dose-counting fallback). Pulses per transition.
 # Rows: from K D L W. Columns: to K D L W. Darkening is ~3x slower than
 # lightening with short pulses.

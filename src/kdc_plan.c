@@ -37,8 +37,13 @@ int kdc_plan_init(kdc_plan_t *p, int w, int h, const kdc_plan_cfg_t *cfg)
 	p->t_long = calloc(1, (size_t)p->ntiles);
 	if (cfg->model)
 		p->lv = calloc(n, sizeof *p->lv);
+	if (cfg->model && cfg->history && cfg->levels == 4)
+		p->org = calloc(1, n);
+	else
+		p->cfg.history = 0;
 	if (!p->prev || !p->tgt || !p->lvl || !p->rem || !p->tot || !p->plane ||
-	    !p->t_active || !p->t_dirty || !p->t_copy || !p->t_long || (cfg->model && !p->lv)) {
+	    !p->t_active || !p->t_dirty || !p->t_copy || !p->t_long || (cfg->model && !p->lv) ||
+	    (p->cfg.history && !p->org)) {
 		kdc_plan_free(p);
 		return -1;
 	}
@@ -67,7 +72,7 @@ void kdc_plan_free(kdc_plan_t *p)
 {
 	free(p->prev); free(p->tgt); free(p->lvl); free(p->rem); free(p->tot);
 	free(p->plane); free(p->t_active); free(p->t_dirty); free(p->t_copy);
-	free(p->lv); free(p->t_long);
+	free(p->lv); free(p->org); free(p->t_long);
 	free(p->chg_row); free(p->t_chg);
 	for (int t = 0; t < 4; t++) free(p->dec[t]);
 	for (int r = 0; r < 8; r++) free(p->thr_row[r]);
@@ -154,6 +159,8 @@ void kdc_plan_reset(kdc_plan_t *p, const uint8_t *frame)
 	memcpy(p->lvl, p->tgt, n);
 	if (p->lv)
 		for (size_t i = 0; i < n; i++) p->lv[i] = shade_lv(p, p->tgt[i]);
+	if (p->org)
+		memcpy(p->org, p->tgt, n);
 	memset(p->rem, 0, n);
 	memset(p->tot, 0, n);
 	memset(p->t_active, 0, (size_t)p->ntiles);
@@ -241,6 +248,50 @@ static void ingest_span_model(kdc_plan_t *p, size_t o, const uint8_t *restrict s
 	}
 }
 
+/* State model with history compensation (4 levels). A pixel whose target
+ * goes back to the shade it last settled at (org) gets the route correction
+ * for that round trip, scaled by how far it had got toward the shade it is
+ * leaving: route[o][v] for a finished trip o -> v -> o, less for a reversal
+ * cut short. A pixel that had settled at its old target starts a new trip
+ * from there; a return home keeps home as the origin. Scalar: only changed
+ * pixels do any work. */
+static void ingest_span_history(kdc_plan_t *p, size_t o, const uint8_t *restrict src,
+                                const uint8_t *restrict thr, int n, uint8_t *restrict chg)
+{
+	uint8_t *restrict tgt = p->tgt + o, *restrict org = p->org + o;
+	uint16_t *restrict lv = p->lv + o;
+	const uint8_t ch = p->cfg.cmd_hold;
+	for (int i = 0; i < n; i++) {
+		unsigned v = src[i] * 3u + thr[i];
+		uint8_t q = (uint8_t)((v + 1 + (v >> 8)) >> 8);   /* exact v / 255 */
+		uint8_t t = tgt[i];
+		chg[i] = (uint8_t)-(q != t);
+		if (q == t)
+			continue;
+		tgt[i] = q;
+		int l = lv[i];
+		uint8_t og = org[i];
+		int settled = p->dec[t][l] == ch;
+		if (og == q && og != t) {
+			int r = p->cfg.route[og][t];
+			if (r) {
+				int lo = shade_lv(p, og), lt = shade_lv(p, t);
+				/* progress toward t, 0..1 (x1024) */
+				int f = (l - lo) * 1024 / (lt - lo);
+				f = f < 0 ? 0 : f > 1024 ? 1024 : f;
+				l += r * f / 1024;
+				lv[i] = (uint16_t)(l < 0 ? 0 : l > KDC_LV_MAX ? KDC_LV_MAX : l);
+			}
+		}
+		/* A pixel that settled at t and moves on starts its next trip there.
+		 * A return home keeps home: a pixel resting on a background that
+		 * something crosses again and again stays a pixel of that background
+		 * (otherwise it alternates between two routes, column by column). */
+		if (settled && og != q)
+			org[i] = t;
+	}
+}
+
 int kdc_plan_ingest(kdc_plan_t *p, const uint8_t *frame, const uint8_t *tile_damage)
 {
 	int changed_tiles = 0;
@@ -263,7 +314,9 @@ int kdc_plan_ingest(kdc_plan_t *p, const uint8_t *frame, const uint8_t *tile_dam
 					continue;
 				memcpy(p->prev + o, frame + o, (size_t)n);
 				if (fast) {
-					if (model)
+					if (p->org)
+						ingest_span_history(p, o, frame + o, p->thr_row[y & 7] + x0, n, p->chg_row);
+					else if (model)
 						ingest_span_model(p, o, frame + o, p->thr_row[y & 7] + x0, n, p->chg_row);
 					else
 						ingest_span_dither(p, o, frame + o, p->thr_row[y & 7] + x0, n, p->chg_row);

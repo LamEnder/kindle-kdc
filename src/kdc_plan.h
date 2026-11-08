@@ -40,6 +40,12 @@ typedef struct {
 	uint8_t cmd_black_long, cmd_white_long;
 	uint16_t long_ratio_x16;    /* long only if its gain > ratio * short gain (x16) */
 	uint16_t long_short_max;    /* ...and only where a short pulse gains < this */
+	/* History compensation (state model, 4 levels): route[o][v] is added to
+	 * the level of a pixel that left shade o for shade v when its target goes
+	 * back to o, scaled by how far it had got (1 = reached v). In level units
+	 * (KDC_LV_MAX / 3 per shade). */
+	int history;
+	int16_t route[4][4];
 } kdc_plan_cfg_t;
 
 typedef struct {
@@ -50,6 +56,8 @@ typedef struct {
 	uint8_t *prev;              /* last ingested frame */
 	uint8_t *tgt, *lvl, *rem, *tot;
 	uint16_t *lv;               /* state model: estimated level (model only) */
+	uint8_t *org;               /* history: shade the pixel last settled at
+	                             * before its current trip (history only) */
 	uint8_t *dec[4];            /* state model: command for (target shade, level),
 	                             * precomputed from the decision rule (4 x 1 KiB) */
 	uint8_t *plane;             /* command plane, mirrors what the fb must hold */

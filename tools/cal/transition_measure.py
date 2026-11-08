@@ -29,8 +29,9 @@ def rows():
     return out
 
 
-def main():
-    img = Image.open(sys.argv[1])
+def measure(path, debug=None, quiet=False):
+    """Per row (band, rect): dict with trail, gap, streak, rect, ref."""
+    img = Image.open(path)
     g = img.convert("L")
     tl, tr, bl, br = L.find_screen(img)
     h = L.homography([(0, 0), (W, 0), (0, H), (W, H)], [tl, tr, bl, br])
@@ -41,8 +42,9 @@ def main():
         dr.polygon([L.apply(h, x0, y0), L.apply(h, x1, y0), L.apply(h, x1, y1), L.apply(h, x0, y1)], outline=color)
         return L.mean(g, h, x0, y0, x1, y1, 3)
 
-    print("band row  | trail  gap   trail-gap | streak | rect   ref   rect-ref")
-    tot = []
+    out = []
+    if not quiet:
+        print("band row  | trail  gap   trail-gap | streak | rect   ref   rect-ref")
     for b, s, y in rows():
         ty0, ty1 = y + 12, y + RH - 12
         tx0, tx1 = X0 + RW + 30, X1 - 30
@@ -56,11 +58,15 @@ def main():
         streak = (sum((c - m) ** 2 for c in cols) / len(cols)) ** 0.5
         rect = box(X1 + 12, y + 12, X1 + RW - 12, y + RH - 12, (0, 200, 0))
         ref = box(REFX + 10, y + 12, REFX + 40, y + RH - 12, (0, 200, 0))
-        tot.append(abs(trail - gap))
-        print(f" {NAMES[b]}    {NAMES[s]}   | {trail:5.1f} {gap:5.1f}  {trail - gap:+6.1f}   | {streak:5.1f}  | {rect:5.1f} {ref:5.1f}  {rect - ref:+6.1f}")
-    print(f"mean |trail-gap| = {sum(tot) / len(tot):.1f}")
-    if len(sys.argv) > 2:
-        dbg.save(sys.argv[2])
+        out.append(dict(band=b, rect_shade=s, trail=trail, gap=gap, streak=streak, rect=rect, ref=ref))
+        if not quiet:
+            print(f" {NAMES[b]}    {NAMES[s]}   | {trail:5.1f} {gap:5.1f}  {trail - gap:+6.1f}   | {streak:5.1f}  | {rect:5.1f} {ref:5.1f}  {rect - ref:+6.1f}")
+    if not quiet:
+        print(f"mean |trail-gap| = {sum(abs(r['trail'] - r['gap']) for r in out) / len(out):.1f}")
+    if debug:
+        dbg.save(debug)
+    return out
 
 
-main()
+if __name__ == "__main__":
+    measure(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

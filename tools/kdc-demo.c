@@ -263,7 +263,8 @@ int main(int argc, char **argv)
 	        el, (unsigned long long)st.scans, st.scans / el, (unsigned long long)st.updates,
 	        (unsigned long long)st.frames_in, (unsigned long long)st.frames_dropped,
 	        st.avg_scan_ms, st.avg_plan_ms, st.pulse_slot, st.pulse_frames, st.temperature_c,
-	        st.pulse_frames_ref, st.model ? "state model (budgets unused)" : "budget",
+	        st.pulse_frames_ref, !st.model ? "budget" : st.history ? "state model + history (budgets unused)"
+	        : "state model (budgets unused)",
 	        st.budget_black, st.budget_white,
 	        (unsigned long long)st.submit_errors);
 	if (*kdc_last_error(k)) fprintf(stderr, "kdc-demo: %s\n", kdc_last_error(k));

@@ -67,6 +67,15 @@ typedef struct {
 	double long_ratio;
 	double long_short_max;      /* levels; long only where a short pulse gains less (0.05) */
 	double settle_tol;          /* levels; stop driving when this close (0.1) */
+	/* History compensation (KDC_MODE_GRAY4 with the state model): a pixel
+	 * that left shade o for shade v and is sent back to o comes back wrong by
+	 * a repeatable amount (it has a history). route[o][v], in levels, is
+	 * added to its estimated level at that moment, scaled by how far it had
+	 * got toward v: negative = it comes back too dark, so drive it lighter.
+	 * "route O V BIAS" lines (shades K D L W); tools/cal/route_fit.py fits
+	 * them from transition-test photos. have_routes = any set. */
+	double route[4][4];
+	int have_routes;
 
 	int dose_pulse_frames;      /* install setting dose[] was calibrated for
 	                             * (kdc-pulse.sh install N); 0 = uncalibrated.
@@ -104,6 +113,7 @@ typedef struct {
 	int budget_black, budget_white; /* effective dither budgets (dose counting) */
 	int model;                  /* 1 = state model with response curves */
 	int dual;                   /* 1 = long pulses in use */
+	int history;                /* 1 = route (history) corrections in use */
 	uint64_t long_updates;      /* updates sent with the long slot */
 	int temperature_c;
 } kdc_stats_t;

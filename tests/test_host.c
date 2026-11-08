@@ -2,6 +2,7 @@
  * Host tests: waveform patching and the controller against the simulated
  * panel. Run: make test [WFM=path/to/real.wrf]
  */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -539,11 +540,13 @@ static void test_dose_file(void)
 	CHECK(c2.dose_pulse_frames == 1 && c2.dose[3][0] == 30);
 	CHECK(c2.dark_tau > 11.0 && c2.dark_tau < 11.2 && c2.light_p > 1.2 && c2.light_p < 1.3);
 	CHECK(c2.have_steps == 3 && c2.dark_steps[4] > 0.29 && c2.light_steps[6] == 0.0);
+	CHECK(c2.have_routes && c2.route[1][0] < -0.1 && c2.route[2][0] > 0.4);
 	unlink(path);
 }
 
 /* State model on a simulated panel that follows the same curves. */
 static int model_steps, model_dual;
+static double model_route_lkl;          /* route L > K > L (history test) */
 static kdc_t *open_model(int w, int h, kdc_mode_t mode)
 {
 	kdc_config_t c;
@@ -567,6 +570,10 @@ static kdc_t *open_model(int w, int h, kdc_mode_t mode)
 		memcpy(c.dark_steps, ds, sizeof ds);
 		memcpy(c.light_steps, ls, sizeof ls);
 		c.have_steps = 3;
+	}
+	if (model_route_lkl != 0) {
+		c.route[2][0] = model_route_lkl;
+		c.have_routes = 1;
 	}
 	kdc_t *k = NULL;
 	if (kdc_open(&k, &c) != KDC_OK) {
@@ -738,6 +745,71 @@ static void test_dual(void)
 	model_dual = 0;
 }
 
+/* Mean optical value of a full-frame shade sequence (flush after each). */
+static double shade_trip(kdc_t *k, int w, int h, const uint8_t *seq, int n)
+{
+	for (int i = 0; i < n; i++) {
+		uint8_t *f = kdc_frame_begin(k, 0);
+		memset(f, seq[i], (size_t)w * h);
+		kdc_frame_publish(k, NULL, 0);
+		CHECK(kdc_flush(k, 20000) == 0);
+	}
+	const uint8_t *o = kdc_sim_optical(k);
+	double sum = 0;
+	for (int i = 0; i < w * h; i++) sum += o[i];
+	return sum / (w * h);
+}
+
+/* History: the simulated panel has none, so a route correction must show up
+ * as exactly that offset after the round trip, and nowhere else. */
+static void test_history(void)
+{
+	printf("history: route corrections\n");
+	char path[] = "/tmp/kdc_test_routesXXXXXX";
+	int fd = mkstemp(path);
+	CHECK(fd >= 0);
+	FILE *f = fdopen(fd, "w");
+	fputs("install 1\ndark_steps 0 .018 .096 .161 .295 .245 .163\n"
+	      "light_steps .228 .35 .377 .35 .298 .05 0\nroute L K -0.30\nroute D W 0.2\n"
+	      "0 3 6 10\n20 0 3 9\n22 4 0 8\n30 11 5 0\n", f);
+	fclose(f);
+	kdc_config_t c;
+	kdc_config_default(&c);
+	char err[200];
+	CHECK(kdc_config_load_doses(&c, path, err, sizeof err) == 0);
+	CHECK(c.have_routes && c.route[2][0] == -0.30 && c.route[1][3] == 0.2 && c.route[0][2] == 0);
+	f = fopen(path, "w");
+	fputs("install 1\nroute L L 0.1\n0 3 6 10\n20 0 3 9\n22 4 0 8\n30 11 5 0\n", f);
+	fclose(f);
+	CHECK(kdc_config_load_doses(&c, path, err, sizeof err) < 0);
+	printf("  bad route rejected: %s\n", err);
+	unlink(path);
+
+	const int W = 64, H = 64;
+	static const uint8_t lkl[3] = { 170, 0, 170 }, ldl[3] = { 170, 85, 170 };
+	model_steps = 1;
+	kdc_t *k = open_model(W, H, KDC_MODE_GRAY4);
+	CHECK(k);
+	double plain = k ? shade_trip(k, W, H, lkl, 3) : 0;
+	kdc_close(k);
+	model_route_lkl = -0.30;                  /* comes back too dark: drive lighter */
+	k = open_model(W, H, KDC_MODE_GRAY4);
+	CHECK(k);
+	kdc_stats_t st;
+	if (k) { kdc_get_stats(k, &st); CHECK(st.history == 1); }
+	double comp = k ? shade_trip(k, W, H, lkl, 3) : 0;
+	kdc_close(k);
+	k = open_model(W, H, KDC_MODE_GRAY4);   /* fresh panel: L > D > L has no route */
+	double other = k ? shade_trip(k, W, H, ldl, 3) : 0;
+	kdc_close(k);
+	model_route_lkl = 0;
+	model_steps = 0;
+	printf("  L>K>L back at %.1f (plain %.1f, want 170 + ~25), L>D>L %.1f\n", comp, plain, other);
+	CHECK(fabs(plain - 170) < 12);
+	CHECK(comp - plain > 12 && comp - plain < 40);
+	CHECK(fabs(other - 170) < 12);
+}
+
 int main(int argc, char **argv)
 {
 	test_wfm(argc > 1 ? argv[1] : NULL);
@@ -757,6 +829,7 @@ int main(int argc, char **argv)
 	test_model_sweep();
 	test_model_dither();
 	test_dual();
+	test_history();
 	if (failures) {
 		printf("%d check(s) FAILED\n", failures);
 		return 1;

@@ -15,6 +15,7 @@
 #include "kdc.h"
 
 #include <errno.h>
+#include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -156,6 +157,21 @@ int kdc_config_load_doses(kdc_config_t *c, const char *path, char *err, size_t e
 			}
 			if (is_long) c->have_long_steps |= dark ? 1 : 2;
 			else c->have_steps |= dark ? 1 : 2;
+			continue;
+		}
+		if (!strncmp(p, "route", 5) && (p[5] == ' ' || p[5] == '\t')) {
+			char a, b;
+			double v;
+			const char *sh = "KDLW", *pa, *pb;
+			if (sscanf(p + 5, " %c %c %lf", &a, &b, &v) != 3 || !(pa = strchr(sh, a)) ||
+			    !(pb = strchr(sh, b)) || !a || !b || a == b || v < -1.5 || v > 1.5) {
+				snprintf(err, errlen, "%s:%d: expected 'route O V BIAS' (shades K D L W, O != V, "
+				         "BIAS -1.5..1.5 levels)", path, lineno);
+				fclose(f);
+				return -1;
+			}
+			c->route[pa - sh][pb - sh] = v;
+			c->have_routes = 1;
 			continue;
 		}
 		if (!strncmp(p, "dark", 4) || !strncmp(p, "light", 5)) {
@@ -654,6 +670,13 @@ int kdc_open(kdc_t **out, const kdc_config_t *cfg)
 		double tol = k->cfg.settle_tol > 0 ? k->cfg.settle_tol : 0.1;
 		pc.tol = (uint16_t)(tol / 3.0 * KDC_LV_MAX + 0.5);
 		k->st.model = 1;
+		if (k->cfg.have_routes && pc.levels == 4) {
+			pc.history = 1;
+			for (int o = 0; o < 4; o++)
+				for (int v = 0; v < 4; v++)
+					pc.route[o][v] = (int16_t)lround(k->cfg.route[o][v] / 3.0 * KDC_LV_MAX);
+			k->st.history = 1;
+		}
 	}
 	pc.retarget_pct = k->cfg.retarget_pct ? k->cfg.retarget_pct : 100;
 	pc.gray_dither = k->cfg.gray_dither;
