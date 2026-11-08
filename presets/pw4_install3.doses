@@ -1,0 +1,22 @@
+# kdc calibration: Kindle PaperWhite 4 (ED060KC4 panel, fw 5.18.1.1.1)
+# GRAY preset for 3-frame pulses (kdc-pulse.sh install 3; 4-5 frames per pulse
+# at 17-18 C). For black/white video use pw4_install3_video.doses instead.
+# NOT RECOMMENDED for gray: transition test mean |trail-gap| 36.2 (install 1:
+# 6.6, install 2: 11.4). One pulse jumps more than a gray level and pixels
+# coming back from black/white leave dark trails (history effect).
+# 2026-11-08, kdc-cal stage1 24 / stage2 2 1 16 at 17-18 C.
+install 3
+
+# Per-level pulse steps (levels moved by one pulse at levels 0, 0.5, .. 3).
+# Joint fit to all six ladders, rms 0.058 levels (fit_joint.py --min-light 0.2).
+# Very coarse: one pulse takes W -> 1.6 (past L), K -> 1.5, D -> 2.6.
+# Darkening stalls near 0.5 (the model's black stops there too).
+dark_steps  0.000 0.003 0.091 0.684 0.902 0.895 1.398
+light_steps 1.500 1.710 1.775 1.340 1.610 0.920 0.000
+
+# Dose matrix (dose-counting fallback). Pulses per transition.
+#    K   D   L   W
+K    0   1   1   3
+D    6   0   1   2
+L    6   1   0   2
+W    8   2   1   0

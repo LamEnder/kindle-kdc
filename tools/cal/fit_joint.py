@@ -1,6 +1,6 @@
 """Joint fit of per-level pulse steps to all kdc-cal ladders.
 
-usage: fit_joint.py stage1.jpg stage2.jpg WD WL
+usage: fit_joint.py stage1.jpg stage2.jpg WD WL [N1=40 [N2=32]] [--min-light X]
 
 Model (Markov in level, piecewise linear):
   dark pulse:  l' = max(0, l - rd(l))     rd: steps at knots 0, .5, .., 3
@@ -11,26 +11,17 @@ pulses from white with the same model, so the fit is self-consistent.
 """
 import sys
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
-import ladder_measure as L
-from PIL import Image
+import ladder_levels as LL
 
 KNOTS = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 
 
-def setup(path):
-    img = Image.open(path)
-    g = img.convert("L")
-    tl, tr, bl, br = L.find_screen(img)
-    return g, L.homography([(0, 0), (L.SW, 0), (0, L.SH), (L.SW, L.SH)], [tl, tr, bl, br])
-
-
-def local(g, h, by, i):
-    x, y = L.patch_pos(by, i)
-    p = L.mean(g, h, x + 14, y + 14, x + L.PATCH - 14, y + L.PATCH - 14)
-    sy = y + L.PATCH
-    d = L.mean(g, h, x + 6, sy + 6, x + L.PATCH - 6, sy + L.STRIPE_H - 6)
-    l = L.mean(g, h, x + 6, sy + L.STRIPE_H + 6, x + L.PATCH - 6, sy + 2 * L.STRIPE_H - 6)
-    return p, d, l
+def measure(s1, s2, n1, n2):
+    """Levels of all six ladders (same measurement as ladder_levels.py)."""
+    m1, rk = LL.measure(s1, "stage1", n1, quiet=True)
+    m2, _ = LL.measure(s2, "stage2", n2, rk=rk, quiet=True)
+    m1.update(m2)
+    return m1
 
 
 def interp(vals, l):
@@ -39,43 +30,6 @@ def interp(vals, l):
     i = int(l / 0.5)
     t = (l - KNOTS[i]) / 0.5
     return vals[i] + (vals[i + 1] - vals[i]) * t
-
-
-def measure(s1, s2):
-    g1, h1 = setup(s1)
-    n1 = 40
-    by_w, by_k = 8, 8 + L.block_h(n1)
-    rk, rw = [], []
-    for i in range(43, 47):
-        for by, acc in ((by_w, rw), (by_k, rk)):
-            bg, d, l = local(g1, h1, by, i)
-            acc.append((bg - d) / (l - d))
-    RK, RW = sum(rk) / len(rk), sum(rw) / len(rw)
-
-    def level(p, d, l):
-        s = l - d
-        pts = [(d + RK * s, 0.0), (d, 1.0), (l, 2.0), (d + RW * s, 3.0)]
-        if p <= pts[0][0]:
-            v = (p - pts[0][0]) / (pts[1][0] - pts[0][0])
-        else:
-            v = None
-            for (a, la), (b, lb) in zip(pts, pts[1:]):
-                if p <= b:
-                    v = la + (p - a) / (b - a) * (lb - la)
-                    break
-            if v is None:
-                v = 3.0 + (p - pts[3][0]) / (pts[3][0] - pts[2][0])
-        return min(3.0, max(0.0, v))
-
-    seqs = {}
-    seqs["W>"] = [level(*local(g1, h1, by_w, i)) for i in range(1, n1 + 1)]
-    seqs["K>"] = [level(*local(g1, h1, by_k, i)) for i in range(1, n1 + 1)]
-    g2, h2 = setup(s2)
-    n2 = 32
-    for k, t in enumerate(["D>W", "D>K", "L>W", "L>K"]):
-        by = 8 + k * L.block_h(n2)
-        seqs[t] = [level(*local(g2, h2, by, i)) for i in range(1, n2 + 1)]
-    return seqs
 
 
 def simulate(rd, ru, start, direction, n):
@@ -103,12 +57,21 @@ def loss(rd, ru, seqs, wd, wl):
 
 
 def main():
-    s1, s2, wd, wl = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
-    seqs = measure(s1, s2)
+    args = sys.argv[1:]
+    min_light = 0.003
+    if "--min-light" in args:   # lower bound for light steps below 3 (white must stay reachable)
+        k = args.index("--min-light")
+        min_light = float(args[k + 1])
+        del args[k:k + 2]
+    s1, s2, wd, wl = args[0], args[1], int(args[2]), int(args[3])
+    n1 = int(args[4]) if len(args) > 4 else 40
+    n2 = int(args[5]) if len(args) > 5 else 32
+    seqs = measure(s1, s2, n1, n2)
     # Start from the parametric fits (dark: 3exp(-n/11.1) -> step ~ l*0.086).
     rd = [max(0.004, k * 0.086) for k in KNOTS]
     ru = [0.30, 0.33, 0.30, 0.25, 0.17, 0.10, 0.0]
     rd[0] = 0.0
+    ru = [max(v, min_light) for v in ru[:6]] + [0.0]
     best = loss(rd, ru, seqs, wd, wl)
     print(f"start loss {best:.4f} (rms {best ** 0.5:.3f})")
     step = 0.04
@@ -116,11 +79,11 @@ def main():
         improved = True
         while improved:
             improved = False
-            for arr, lo_i, hi_i in ((rd, 1, 7), (ru, 0, 6)):
+            for arr, lo_i, hi_i, lo in ((rd, 1, 7, 0.003), (ru, 0, 6, min_light)):
                 for i in range(lo_i, hi_i):
                     for dv in (step, -step):
                         old = arr[i]
-                        arr[i] = min(1.0, max(0.003, old + dv))
+                        arr[i] = min(3.0, max(lo, old + dv))
                         e = loss(rd, ru, seqs, wd, wl)
                         if e < best - 1e-7:
                             best = e
@@ -138,8 +101,8 @@ def main():
         meas = seqs[name]
         sim = simulate(rd, ru, st, dr, len(meas))
         rms = (sum((a - b) ** 2 for a, b in zip(sim, meas)) / len(meas)) ** 0.5
-        print(f"  {name:4s} rms {rms:.2f}   sim/meas @1 {sim[0]:.2f}/{meas[0]:.2f}  @4 {sim[3]:.2f}/{meas[3]:.2f}"
-              f"  @10 {sim[9]:.2f}/{meas[9]:.2f}  @24 {sim[23]:.2f}/{meas[23]:.2f}")
+        at = "  ".join(f"@{k} {sim[k - 1]:.2f}/{meas[k - 1]:.2f}" for k in (1, 2, 4, 10, len(meas)))
+        print(f"  {name:4s} rms {rms:.2f}   sim/meas {at}")
     # pulses to reach shades from the fitted model, for reference
     def pulses(start, target, dr):
         l, n = start, 0

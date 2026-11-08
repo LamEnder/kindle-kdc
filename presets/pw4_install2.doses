@@ -1,0 +1,24 @@
+# kdc calibration: Kindle PaperWhite 4 (ED060KC4 panel, fw 5.18.1.1.1)
+# 2026-11-08, kdc-cal at 17 C, 2-frame pulses (kdc-pulse.sh install 2;
+# 3 frames per pulse at 17 C after temperature scaling).
+# Transition test (kdc-demo -g -k transition, 13.6 scans/s): mean |trail-gap|
+# 11.4 (install 1: 6.6). Worst: dark trails where black rects leave D/L bands
+# (pixels pulsed deep into black lighten slower than the ladders predict).
+install 2
+
+# Per-level pulse steps: levels moved by one pulse at levels 0, 0.5, .. 3.
+# Joint fit to all six ladders (stage1 32, stage2 3 1 24), rms 0.177 levels,
+# with light steps held >= 0.2 below white (fit_joint.py --min-light 0.2): the
+# L>W ladder plateaued at ~2.6 in the photo while D>W and K> reached white,
+# and an unconstrained fit (rms 0.137) made white unreachable from 2.5.
+# One pulse: W -> 2.3, two -> 1.5; K -> 0.8, two -> 1.8, ~6 to white.
+# Darkening stalls near 0.2-0.5 (pulses cannot reach the GC16 black).
+dark_steps  0.000 0.023 0.324 0.489 0.835 0.873 0.706
+light_steps 0.780 1.000 0.965 1.000 0.693 0.200 0.000
+
+# Dose matrix (dose-counting fallback). Pulses per transition.
+#    K   D   L   W
+K    0   1   2   6
+D   12   0   1   4
+L   14   2   0   4
+W   16   3   1   0

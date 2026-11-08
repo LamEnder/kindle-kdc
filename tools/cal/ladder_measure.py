@@ -102,7 +102,22 @@ def find_screen(img):
                     last = k
             else:
                 run = 0
-        return first, last
+        if first is None:
+            return None, None
+        return edge(seq, first, +1), edge(seq, last, -1)
+
+    win = int(min(w, h) * 0.06)
+
+    def edge(seq, k, sign):
+        """Snap a threshold crossing to the sharpest step near it. Frontlight
+        glow on the bezel stays above the threshold but fades smoothly; the
+        screen edge is a hard step."""
+        best, bi = -1e9, k
+        for i in range(max(3, k - win), min(len(seq) - 3, k + win)):
+            d = (seq[i + 1] + seq[i + 2] + seq[i + 3]) - (seq[i - 1] + seq[i - 2] + seq[i - 3])
+            if sign * d > best:
+                best, bi = sign * d, i
+        return bi
 
     top, bot, left, right = [], [], [], []
     for x in range(int(w * 0.2), int(w * 0.8), 6):
