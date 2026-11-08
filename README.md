@@ -164,6 +164,7 @@ keep up with are dropped at the mailbox, and only the latest one is driven.
 | drive frames per scan | `kdc-pulse.sh install N` (1–8) | Pulse length. Shorter gives more scans/s and finer gray steps, but more per-update overhead. |
 | `budget_black/white` | dither mode | Scans per change; `0` = automatic for the installed pulse length. Higher means deeper black/white and fewer trails, but softer motion. |
 | `dose[4][4]`, `retarget_pct` | gray4 mode | Pulses per transition at the installed pulse length; calibrate with `kdc-cal`. The default is InkBoy's table, tuned for a different panel. |
+| `route O V BIAS` | `.doses` file, gray4 + state model | History correction for the round trip O → V → O, in levels; fit with `tools/cal/route_fit.py`. Keep it small next to one pulse step. |
 | `max_bands` | 1–8 | More rectangles per scan means less area processed, but more ioctls. |
 | `min_scan_interval_us` | | Caps the scan rate. |
 | `keep_power_ms` | | EPDC power-down delay during the session. |
@@ -249,13 +250,16 @@ along measured per-level pulse steps. Retargeting a pixel mid-way therefore need
 special handling: it continues from wherever the model says it is. Black and
 white targets are overdriven (a third of the stop tolerance).
 
-Two calibrated presets (PW4, 18–19 °C), made with `kdc-cal` ladders and phone
+Calibrated presets (PW4, 17–19 °C), made with `kdc-cal` ladders and phone
 photos (see `tools/cal/README.md`):
 
 | Preset | Install | Pulses | Best for |
 | --- | --- | --- | --- |
-| `presets/pw4_install1.doses` | `kdc-pulse.sh install 1` | 1-frame short pulses | speed: ~20 scans/s |
-| `presets/pw4_install1_long6.doses` | `kdc-pulse.sh install 1 6` | short + long (6 frames at 25 °C, 9 at 18 °C) | accuracy, deeper blacks: ~9 scans/s in the transition test |
+| `presets/pw4_install1.doses` | `kdc-pulse.sh install 1` | 1-frame short pulses, history corrections | the default: ~20 scans/s, best trails |
+| `presets/pw4_install1_long3.doses` | `kdc-pulse.sh install 1 3` | short + long (3 frames at 25 °C, 4 at 18 °C), history corrections | dual pulses at ~11 scans/s |
+| `presets/pw4_install1_long6.doses` | `kdc-pulse.sh install 1 6` | short + long (6 frames at 25 °C, 9 at 18 °C) | deepest blacks, ~9 scans/s |
+| `presets/pw4_install2.doses` | `kdc-pulse.sh install 2` | 2-frame pulses | ~14 scans/s, coarse grays (not recommended) |
+| `presets/pw4_install3.doses` | `kdc-pulse.sh install 3` | 3-frame pulses | not usable for gray; use `pw4_install3_video.doses` (dither) |
 
 ```sh
 kdc-pulse.sh install 1 6
@@ -274,6 +278,42 @@ D–L step is ~45; lower is better):
 | State model, parametric curves | 9.8 | −20.2 | ~22 |
 | State model, joint step fit + endpoint overdrive (`install1`) | 6.6 | +14.5 | ~20 |
 | Dual pulses (`install1_long6`) | **5.0** | −12.3 | ~9 |
+| Dual, shorter long pulse (`install1_long3`) | 6.2 | +14.2 | ~11 |
+| 2-frame pulses (`install2`) | 11.4 | −44.3 | ~14 |
+| 3-frame pulses (`install3`) | 36.2 | −81.5 | ~10 |
+
+These numbers are from different days, lighting and photos; compare within a
+row group, not across. On 2026-11-08 the same `install1` test scored 8.8.
+
+**Longer pulses are coarser.** One 2-frame pulse moves a pixel about a whole
+level (W → 2.3 → 1.5; K → 0.8 → 1.8), a 3-frame pulse more than a level
+(W → 1.6). The model cannot land between steps, and pixels pulsed deep into
+black lighten more slowly than the ladders predict, so trails behind moving
+objects get worse with every frame added.
+
+**History compensation.** A pixel that leaves shade O for V and is sent back
+to O comes back off by a repeatable amount: it has a history, which the
+Markov-in-level model ignores. Like InkBoy's route corrections, kdc keeps per
+pixel the shade it last settled at (its origin; a return home keeps home) and,
+when the target goes back to that origin, adds `route O V` (levels) to the
+estimated level, scaled by how far the pixel had got toward V. This covers
+finished trips and reversals cut short with one table. The 12 transition-test
+rows are exactly the 12 routes, so `tools/cal/route_fit.py` turns each test
+photo into updated `route` lines; a few rounds converge to the run-to-run
+noise.
+
+| Transition test, 2026-11-08 | No routes | With routes |
+| --- | --- | --- |
+| `install1`, the 9 rows not returning to black | 6.4 | **1.9** (3 rounds) |
+| `install1`, D→K→D (black crossing dark gray) | −13.0 | −6.5 … +3.8 |
+| `install1_long3`, the 9 rows not returning to black | 5.6 | **2.4** (2 rounds) |
+
+Returns to black stay uncorrected: short pulses stop at the black floor
+whatever the model believes. Routes need pulses that are small compared with
+the correction. With `install 2` they flipped the error (D→K→D −44 → +44) or
+left pixels stuck: once the model believes a pixel is where every possible
+pulse would overshoot, it holds, and with L→D→L +0.65 the trail stayed dark
+gray. That preset has no routes.
 
 **Dual pulses.** With 1-frame pulses, darkening near black is very weak (~0.02
 level per pulse below level 0.5). `install N L` also patches the DU slot with a
@@ -296,14 +336,14 @@ values switch the panel rails), the fixed build sent only DU/DU4 updates.
 ## Limitations and what is unverified
 
 - Verified on one PW4 (fw 5.18.1.1.1, ED060KC4 panel): waveform layout, slot
-  probe (du4=7, du=1), in-place reloads, dither mode. Gray mode is not yet
-  tried on hardware.
+  probe (du4=7, du=1), in-place reloads, dither and gray modes.
 - Only 5-bit waveforms are supported. `kdc-wfm` refuses others.
-- The gray state model is open-loop (Markov in level). It fits the ladders to
-  0.14 (short) / 0.04 (long) levels rms but ignores history. A clean resets
-  accumulated error. Only `install 1` and `install 1 6` are calibrated, at
-  18–19 °C. Dual pulses still leave some streaking where a K object crosses a
-  D background, and in motion-heavy content they halve the scan rate.
+- The gray state model is open-loop (Markov in level plus route corrections
+  for round trips). It fits the ladders to 0.06–0.18 (short) / 0.04–0.08
+  (long) levels rms. A clean resets accumulated error. Presets are calibrated
+  at 17–19 °C only. Short pulses cannot reach GC16 black (floor ~0.25 level),
+  so black on gray and trails in black areas stay slightly light. Frame drops
+  leave faint column stripes where corrected routes cross.
 - 8 bpp framebuffers only, which is what the PW4 uses. Night mode (inverted
   gray) is handled by swapping commands.
 - If the battery/temperature guard trips mid-session, kdc runs a clean and stops
@@ -323,7 +363,7 @@ values switch the panel rails), the fixed build sent only DU/DU4 updates.
 | `tools/kdc-demo.c` | `bounce`, `transition` (gray test) or raw gray video from stdin |
 | `tools/kdc-cal.c` | Gray calibration ladders (`stage1`, `stage2`, `--long`, `clear`) |
 | `tools/cal/` | Photo analysis and model fitting (Python + Pillow) |
-| `presets/*.doses` | Calibrated presets (gray `install1`, dual `install1_long6`, video `install3_video`) |
+| `presets/*.doses` | Calibrated presets (gray `install1`/`install2`/`install3`, dual `install1_long3`/`install1_long6`, video `install3_video`) |
 | `tools/kdc-bench.c` | Planner CPU benchmark (safe to run on the Kindle) |
 | `scripts/kdc-session.sh` | Pause / resume the Kindle UI across commands |
 | `scripts/kdc-pulse.sh` | Install (`install N [L]`) / restore the pulse waveform on the device |

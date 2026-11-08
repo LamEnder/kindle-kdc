@@ -16,6 +16,12 @@ install 2
 dark_steps  0.000 0.023 0.324 0.489 0.835 0.873 0.706
 light_steps 0.780 1.000 0.965 1.000 0.693 0.200 0.000
 
+# No history (route) corrections: tried 2026-11-08 and they do not work at
+# this pulse length. One pulse moves ~1 level, so a correction either changes
+# nothing, flips the error (D>K>D trail -44 -> +44 with -0.73), or leaves
+# pixels stuck: with L>D>L +0.65 the model saw no pulse that helps and the
+# trail stayed dark gray (-86).
+
 # Dose matrix (dose-counting fallback). Pulses per transition.
 #    K   D   L   W
 K    0   1   2   6
