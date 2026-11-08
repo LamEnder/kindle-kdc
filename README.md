@@ -23,10 +23,13 @@ and never writes to flash.
 > [!WARNING]
 > **Experimental. Use at your own risk.** Custom waveforms and fast refresh can
 > cause image retention, and their long-term effect on the panel is unknown. This
-> is the same caveat InkBoy carries. kdc was built and tested on a host
-> simulator. **It has not been run on a real PW4 yet.** Take the first run
-> slowly (see [First run on the device](#first-run-on-the-device)). A reboot
-> always restores the stock waveform.
+> is the same caveat InkBoy carries. kdc has been run on **one** PW4 (firmware
+> 5.18.1.1.1, ED060KC4 panel); every measurement below comes from that device.
+> Other PW4 units, panels and firmware versions are untested. During development
+> a waveform reload that changed the file size **hard-froze that PW4** (see the
+> table below); kdc now refuses such reloads. Take the first run slowly (see
+> [First run on the device](#first-run-on-the-device)). A reboot always restores
+> the stock waveform.
 
 ---
 
@@ -109,7 +112,7 @@ The cross build uses `../x-tools/arm-kindlehf-linux-gnueabihf` (koxtoolchain
    Check that `info` reports a 5-bit waveform with a valid checksum. A valid
    checksum also confirms the CRC code matches Lab126's. Check that the slot
    `probe` printed for du4 exists. If something looks off, stop here and
-   send me the output.
+   open an issue with the output.
 3. Install the pulse waveform (as root):
    ```sh
    ./kdc-pulse.sh install 3              # 3 drive frames per scan at ~25 °C
