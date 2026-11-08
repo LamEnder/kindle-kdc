@@ -45,7 +45,9 @@ def measure(photo, stage, n, debug=None, rk=None, quiet=False):
         d, l = sum(ds) / len(ds), sum(ls) / len(ls)
         ratios[k] = (bg - d) / (l - d)
     if stage == "stage1":
-        RW, RK = ratios[0], ratios[1]
+        # rk overrides the measured black anchor (a glare or exposure
+        # problem on the K block shows up as an outlier, normal is ~-1.2)
+        RW, RK = ratios[0], (rk if rk is not None else ratios[1])
     else:
         RW = sum(ratios.values()) / len(ratios)
         RK = rk if rk is not None else float(os.environ.get("KDC_CAL_RK", "-1.20"))
