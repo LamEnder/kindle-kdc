@@ -541,6 +541,11 @@ static void test_dose_file(void)
 	CHECK(c2.dark_tau > 11.0 && c2.dark_tau < 11.2 && c2.light_p > 1.2 && c2.light_p < 1.3);
 	CHECK(c2.have_steps == 3 && c2.dark_steps[4] > 0.29 && c2.light_steps[6] == 0.0);
 	CHECK(c2.have_routes && c2.route[1][0] < -0.1 && c2.route[2][0] > 0.4);
+	kdc_config_t c3;
+	kdc_config_default(&c3);
+	CHECK(kdc_config_load_doses(&c3, "presets/pw4_install1_long3_video.doses", err, sizeof err) == 0);
+	CHECK(c3.have_long_steps == 3 && c3.long_ratio == 1.5 && c3.long_short_max == 3 &&
+	      c3.settle_tol == 0.2 && c3.rail_tol == 0.3 && !c3.have_routes);
 	unlink(path);
 }
 

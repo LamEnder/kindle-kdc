@@ -12,6 +12,7 @@ static const uint8_t bayer8[64] = {
 };
 
 static int model_decide_tables(kdc_plan_t *p);
+static inline uint16_t shade_lv(const kdc_plan_t *p, uint8_t s);
 
 int kdc_plan_init(kdc_plan_t *p, int w, int h, const kdc_plan_cfg_t *cfg)
 {
@@ -61,7 +62,14 @@ int kdc_plan_init(kdc_plan_t *p, int w, int h, const kdc_plan_cfg_t *cfg)
 		for (int x = 0; x < w; x++)
 			p->thr_row[r][x] = cfg->levels == 4 && !cfg->gray_dither ? 127 : p->thr[r][x & 7];
 	}
-	if (!p->chg_row || !p->t_chg || !p->thr_row[7] || (cfg->model && model_decide_tables(p) < 0)) {
+	if (p->cfg.history) {
+		p->q_row = malloc((size_t)w);
+		for (int o = 0; o < 4; o++)
+			for (int v = 0; v < 4; v++)
+				p->hinv[o][v] = o == v ? 0 : 65536 / ((int)shade_lv(p, (uint8_t)v) - (int)shade_lv(p, (uint8_t)o));
+	}
+	if (!p->chg_row || !p->t_chg || !p->thr_row[7] || (cfg->model && model_decide_tables(p) < 0) ||
+	    (p->cfg.history && !p->q_row)) {
 		kdc_plan_free(p);
 		return -1;
 	}
@@ -73,8 +81,8 @@ void kdc_plan_free(kdc_plan_t *p)
 	free(p->prev); free(p->tgt); free(p->lvl); free(p->rem); free(p->tot);
 	free(p->plane); free(p->t_active); free(p->t_dirty); free(p->t_copy);
 	free(p->lv); free(p->org); free(p->t_long);
-	free(p->chg_row); free(p->t_chg);
-	for (int t = 0; t < 4; t++) free(p->dec[t]);
+	free(p->chg_row); free(p->t_chg); free(p->q_row);
+	free(p->dec[0]);
 	for (int r = 0; r < 8; r++) free(p->thr_row[r]);
 	memset(p, 0, sizeof *p);
 }
@@ -258,38 +266,45 @@ static void ingest_span_model(kdc_plan_t *p, size_t o, const uint8_t *restrict s
 static void ingest_span_history(kdc_plan_t *p, size_t o, const uint8_t *restrict src,
                                 const uint8_t *restrict thr, int n, uint8_t *restrict chg)
 {
-	uint8_t *restrict tgt = p->tgt + o, *restrict org = p->org + o;
+	uint8_t *restrict tgt = p->tgt + o, *restrict org = p->org + o, *restrict qr = p->q_row;
 	uint16_t *restrict lv = p->lv + o;
-	const uint8_t ch = p->cfg.cmd_hold;
+	/* Pass 1 (vectorized): new targets and the changed mask. */
 	for (int i = 0; i < n; i++) {
 		unsigned v = src[i] * 3u + thr[i];
 		uint8_t q = (uint8_t)((v + 1 + (v >> 8)) >> 8);   /* exact v / 255 */
-		uint8_t t = tgt[i];
-		chg[i] = (uint8_t)-(q != t);
-		if (q == t)
-			continue;
-		tgt[i] = q;
-		int l = lv[i];
-		uint8_t og = org[i];
-		int settled = p->dec[t][l] == ch;
-		if (og == q && og != t) {
-			int r = p->cfg.route[og][t];
-			if (r) {
-				int lo = shade_lv(p, og), lt = shade_lv(p, t);
-				/* progress toward t, 0..1 (x1024) */
-				int f = (l - lo) * 1024 / (lt - lo);
-				f = f < 0 ? 0 : f > 1024 ? 1024 : f;
-				l += r * f / 1024;
-				lv[i] = (uint16_t)(l < 0 ? 0 : l > KDC_LV_MAX ? KDC_LV_MAX : l);
-			}
-		}
-		/* A pixel that settled at t and moves on starts its next trip there.
-		 * A return home keeps home: a pixel resting on a background that
-		 * something crosses again and again stays a pixel of that background
-		 * (otherwise it alternates between two routes, column by column). */
-		if (settled && og != q)
-			org[i] = t;
+		qr[i] = q;
+		chg[i] = (uint8_t)-(q != tgt[i]);
 	}
+	/* Pass 2: changed pixels only, skipping 8 unchanged at a time. */
+	const uint8_t ch = p->cfg.cmd_hold, *da = p->dec[0];
+	for (int i0 = 0; i0 < n; i0 += 8) {
+		int i1 = i0 + 8 < n ? i0 + 8 : n;
+		uint64_t m = 0;
+		if (i1 - i0 == 8) memcpy(&m, chg + i0, 8);
+		else for (int i = i0; i < i1; i++) m |= chg[i];
+		if (!m)
+			continue;
+		for (int i = i0; i < i1; i++) {
+			if (!chg[i])
+				continue;
+			uint8_t q = qr[i], t = tgt[i], og = org[i];
+			int l = lv[i];
+			int settled = da[((unsigned)t << 10) | l] == ch;
+			if (og == q && og != t) {
+				int r = p->cfg.route[og][t];
+				if (r) {
+					/* progress toward t, 0..1 (16.16): no divide (the A9 has none) */
+					int f = (l - (int)shade_lv(p, og)) * p->hinv[og][t];
+					f = f < 0 ? 0 : f > 65536 ? 65536 : f;
+					l += (r * f) >> 16;
+					lv[i] = (uint16_t)(l < 0 ? 0 : l > KDC_LV_MAX ? KDC_LV_MAX : l);
+				}
+			}
+			if (settled && og != q)
+				org[i] = t;
+		}
+	}
+	memcpy(tgt, qr, (size_t)n);
 }
 
 int kdc_plan_ingest(kdc_plan_t *p, const uint8_t *frame, const uint8_t *tile_damage)
@@ -398,7 +413,7 @@ static uint8_t model_decide(const kdc_plan_cfg_t *cf, int T, int l)
 	int e = l - T;
 	/* Black and white targets are overdriven (a third of the tolerance):
 	 * extra pulses at the rails cost nothing visually, a gray-ish black does. */
-	int tl = (T == 0 || T == KDC_LV_MAX) ? tol / 3 : tol;
+	int tl = (T == 0 || T == KDC_LV_MAX) ? cf->rail_tol : tol;
 	/* A pulse must gain at least MIN_GAIN units (~0.01 level): at the physical
 	 * floor near black the predicted gain vanishes and the pixel stops instead
 	 * of being pulsed for nothing. */
@@ -422,9 +437,12 @@ static uint8_t model_decide(const kdc_plan_cfg_t *cf, int T, int l)
 
 static int model_decide_tables(kdc_plan_t *p)
 {
+	/* One block for all targets (4 even with 2 levels): the kernel indexes
+	 * it as dec[0][(t << 10) | level] without picking a table. */
+	uint8_t *all = calloc(4, KDC_LV_N);
+	if (!all) return -1;
+	for (int s = 0; s < 4; s++) p->dec[s] = all + (size_t)s * KDC_LV_N;
 	for (int s = 0; s < p->cfg.levels; s++) {
-		p->dec[s] = malloc(KDC_LV_N);
-		if (!p->dec[s]) return -1;
 		int T = shade_lv(p, (uint8_t)s);
 		for (int l = 0; l < KDC_LV_N; l++)
 			p->dec[s][l] = model_decide(&p->cfg, T, l);
@@ -439,9 +457,10 @@ static int model_span(const kdc_plan_t *p, size_t o, int n, uint8_t *restrict ou
 	const uint16_t *restrict lv = p->lv + o;
 	const uint8_t ch = p->cfg.cmd_hold;
 	/* Vector pre-pass: does any pixel of the segment need a pulse at all?
-	 * (tol/3 = the smallest tolerance the decision uses) */
+	 * (the smaller of the two tolerances the decision uses) */
 	{
-		const int mul = p->cfg.levels == 2 ? KDC_LV_MAX : KDC_LV_MAX / 3, tmin = p->cfg.tol / 3;
+		const int mul = p->cfg.levels == 2 ? KDC_LV_MAX : KDC_LV_MAX / 3;
+		const int tmin = p->cfg.rail_tol < p->cfg.tol ? p->cfg.rail_tol : p->cfg.tol;
 		uint8_t need = 0;
 		for (int i = 0; i < n; i++) {
 			int e = (int)lv[i] - tgt[i] * mul;
@@ -452,16 +471,9 @@ static int model_span(const kdc_plan_t *p, size_t o, int n, uint8_t *restrict ou
 			return 0;
 		}
 	}
-	const uint8_t *d0 = p->dec[0], *d1 = p->dec[1], *d2 = p->dec[2], *d3 = p->dec[3];
-	if (p->cfg.levels == 2) {
-		for (int i = 0; i < n; i++)
-			out[i] = (tgt[i] ? d1 : d0)[lv[i]];
-	} else {
-		for (int i = 0; i < n; i++) {
-			uint8_t t = tgt[i];
-			out[i] = (t == 0 ? d0 : t == 1 ? d1 : t == 2 ? d2 : d3)[lv[i]];
-		}
-	}
+	const uint8_t *restrict da = p->dec[0];
+	for (int i = 0; i < n; i++)
+		out[i] = da[((unsigned)tgt[i] << 10) | lv[i]];
 	/* vectorized reductions */
 	const uint8_t cbl = p->cfg.cmd_black_long, cwl = p->cfg.cmd_white_long;
 	uint8_t any = 0, lg = 0;
@@ -669,6 +681,8 @@ static void model_commit_span(kdc_plan_t *p, size_t o, int n)
 	const uint8_t cbl = p->cfg.cmd_black_long, cwl = p->cfg.cmd_white_long;
 	const int dual = p->cfg.dual;
 	uint16_t *lv = p->lv + o;
+	/* Compare chain: on the A9 this beats a branch-free table read through
+	 * next[] (16 vs 19-25 ms per full-screen video scan). */
 	for (int i = 0; i < n; i++) {
 		uint8_t ci = c[i];
 		if (ci == ch) continue;

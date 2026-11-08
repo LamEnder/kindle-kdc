@@ -159,6 +159,32 @@ int kdc_config_load_doses(kdc_config_t *c, const char *path, char *err, size_t e
 			else c->have_steps |= dark ? 1 : 2;
 			continue;
 		}
+		if (!strncmp(p, "settle_tol", 10) || !strncmp(p, "rail_tol", 8)) {
+			int rail = p[0] == 'r';
+			double v;
+			if (sscanf(p + (rail ? 8 : 10), "%lf", &v) != 1 || v <= 0 || v > 1) {
+				snprintf(err, errlen, "%s:%d: expected '%s X' (levels, 0 < X <= 1)", path, lineno,
+				         rail ? "rail_tol" : "settle_tol");
+				fclose(f);
+				return -1;
+			}
+			if (rail) c->rail_tol = v;
+			else c->settle_tol = v;
+			continue;
+		}
+		if (!strncmp(p, "long_ratio", 10) || !strncmp(p, "long_short_max", 14)) {
+			int ratio = p[5] == 'r';
+			double v;
+			if (sscanf(p + (ratio ? 10 : 14), "%lf", &v) != 1 || v <= 0 || v > (ratio ? 16 : 3)) {
+				snprintf(err, errlen, "%s:%d: expected '%s X' (%s)", path, lineno,
+				         ratio ? "long_ratio" : "long_short_max", ratio ? "0 < X <= 16" : "levels, 0 < X <= 3");
+				fclose(f);
+				return -1;
+			}
+			if (ratio) c->long_ratio = v;
+			else c->long_short_max = v;
+			continue;
+		}
 		if (!strncmp(p, "route", 5) && (p[5] == ' ' || p[5] == '\t')) {
 			char a, b;
 			double v;
@@ -669,6 +695,8 @@ int kdc_open(kdc_t **out, const kdc_config_t *cfg)
 			                 pc.next_dark, pc.next_light);
 		double tol = k->cfg.settle_tol > 0 ? k->cfg.settle_tol : 0.1;
 		pc.tol = (uint16_t)(tol / 3.0 * KDC_LV_MAX + 0.5);
+		double rtol = k->cfg.rail_tol > 0 ? k->cfg.rail_tol : tol / 3;
+		pc.rail_tol = (uint16_t)(rtol / 3.0 * KDC_LV_MAX + 0.5);
 		k->st.model = 1;
 		if (k->cfg.have_routes && pc.levels == 4) {
 			pc.history = 1;

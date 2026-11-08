@@ -333,6 +333,24 @@ exactly that (a large wrongly driven rectangle). With the EPDC debug log on
 (`echo 1 > .../20f4000.epdc/mxc_epdc_debug`; only 0 and 1 are safe, the other
 values switch the panel rails), the fixed build sent only DU/DU4 updates.
 
+## Gray video (gmplay `-g`)
+
+Tried 2026-11-08 on French Cancan, against kdc black/white dither
+(`pw4_install3_video.doses`, 7.6 frames/s) and FBInk gray (1.4 frames/s):
+
+| Preset | Frames/s | Notes |
+| --- | --- | --- |
+| `pw4_install1.doses` | 3.9 | 1-frame steps: a big change takes 15–40 scans |
+| `pw4_install1_long3_video.doses` | 6.4 | long pulses wherever they gain 1.5× a short one, `settle_tol 0.2`, `rail_tol 0.3`, no routes: ≤ 8 scans per change |
+
+Grays look clearly better than FBInk gray, but black/white dither still wins
+on the PW4: faster transitions and a better-looking picture. gmplay's
+launcher keeps `pw4_install3_video.doses`.
+
+Video-only `.doses` keys: `long_ratio X`, `long_short_max X` (3 = long pulses
+anywhere), `settle_tol X`, `rail_tol X` (black/white stop tolerance; default
+`settle_tol / 3`).
+
 ## Limitations and what is unverified
 
 - Verified on one PW4 (fw 5.18.1.1.1, ED060KC4 panel): waveform layout, slot
@@ -363,7 +381,7 @@ values switch the panel rails), the fixed build sent only DU/DU4 updates.
 | `tools/kdc-demo.c` | `bounce`, `transition` (gray test) or raw gray video from stdin |
 | `tools/kdc-cal.c` | Gray calibration ladders (`stage1`, `stage2`, `--long`, `clear`) |
 | `tools/cal/` | Photo analysis and model fitting (Python + Pillow) |
-| `presets/*.doses` | Calibrated presets (gray `install1`/`install2`/`install3`, dual `install1_long3`/`install1_long6`, video `install3_video`) |
+| `presets/*.doses` | Calibrated presets (gray `install1`/`install2`/`install3`, dual `install1_long3`/`install1_long6`, video `install3_video`, gray video `install1_long3_video`) |
 | `tools/kdc-bench.c` | Planner CPU benchmark (safe to run on the Kindle) |
 | `scripts/kdc-session.sh` | Pause / resume the Kindle UI across commands |
 | `scripts/kdc-pulse.sh` | Install (`install N [L]`) / restore the pulse waveform on the device |

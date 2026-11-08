@@ -64,9 +64,15 @@ typedef struct {
 	double dark_long_steps[7], light_long_steps[7];
 	int have_long_steps;
 	int long_pulse_frames;      /* L of "install N L" the steps were calibrated for */
-	double long_ratio;
-	double long_short_max;      /* levels; long only where a short pulse gains less (0.05) */
-	double settle_tol;          /* levels; stop driving when this close (0.1) */
+	double long_ratio;          /* "long_ratio X" in a .doses file */
+	double long_short_max;      /* levels; long only where a short pulse gains less (0.05);
+	                             * "long_short_max X". 3 = anywhere a long pulse wins
+	                             * (video: fewer scans per change) */
+	double settle_tol;          /* levels; stop driving when this close (0.1);
+	                             * "settle_tol X" */
+	double rail_tol;            /* same for black and white targets; 0 = settle_tol / 3
+	                             * (overdrive). "rail_tol X". Video presets loosen
+	                             * both: far fewer scans per change. */
 	/* History compensation (KDC_MODE_GRAY4 with the state model): a pixel
 	 * that left shade o for shade v and is sent back to o comes back wrong by
 	 * a repeatable amount (it has a history). route[o][v], in levels, is

@@ -34,6 +34,7 @@ typedef struct {
 	int model;                  /* use the state model below */
 	uint16_t next_dark[KDC_LV_N], next_light[KDC_LV_N]; /* level after one pulse */
 	uint16_t tol;               /* settled when within tol of the target level */
+	uint16_t rail_tol;          /* same for black / white targets */
 	/* Dual pulses (state model only): long pulses from the long slot. */
 	int dual;
 	uint16_t next_dark_long[KDC_LV_N], next_light_long[KDC_LV_N];
@@ -59,7 +60,10 @@ typedef struct {
 	uint8_t *org;               /* history: shade the pixel last settled at
 	                             * before its current trip (history only) */
 	uint8_t *dec[4];            /* state model: command for (target shade, level),
-	                             * precomputed from the decision rule (4 x 1 KiB) */
+	                             * precomputed from the decision rule (4 x 1 KiB,
+	                             * contiguous: dec[0][(t << 10) | level]) */
+	int32_t hinv[4][4];         /* history: 65536 / (level(v) - level(o)) */
+	uint8_t *q_row;             /* scratch: new targets of one row (history) */
 	uint8_t *plane;             /* command plane, mirrors what the fb must hold */
 
 	uint8_t *t_active;          /* tile has pixels with rem > 0 */

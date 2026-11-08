@@ -92,7 +92,30 @@ int main(int argc, char **argv)
 	static const double ls[7] = { 0.228, 0.350, 0.377, 0.350, 0.298, 0.050, 0.000 };
 	kdc_model_tables_steps(ds, ls, pc.next_dark, pc.next_light);
 	pc.tol = 34;
+	pc.rail_tol = 11;
 	bench("gray4, state model", &pc, w, h, iters);
+
+	/* history routes (pw4_install1.doses values, in level units) */
+	static const double rt[4][4] = { { 0, 0, 0, 0 }, { -0.18, 0, -0.05, -0.06 },
+	                                 { 0.49, 0.39, 0, 0.12 }, { -0.02, -0.06, 0.04, 0 } };
+	for (int o = 0; o < 4; o++)
+		for (int v = 0; v < 4; v++)
+			pc.route[o][v] = (int16_t)lround(rt[o][v] / 3.0 * 1023);
+	pc.history = 1;
+	bench("gray4, model + history", &pc, w, h, iters);
+	pc.history = 0;
+
+	/* dual (pw4_install1_long3.doses long steps) */
+	static const double dl[7] = { 0.000, 0.056, 0.444, 0.794, 0.978, 0.991, 0.937 };
+	static const double ll[7] = { 1.200, 1.194, 1.231, 1.297, 1.038, 0.047, 0.000 };
+	kdc_model_tables_steps(dl, ll, pc.next_dark_long, pc.next_light_long);
+	pc.dual = 1;
+	pc.cmd_black = 0x11; pc.cmd_white = 0xEE; pc.cmd_black_long = 0x00; pc.cmd_white_long = 0xFF;
+	pc.long_ratio_x16 = 48;
+	pc.long_short_max = 17;
+	bench("gray4, dual (long 3)", &pc, w, h, iters);
+	pc.dual = 0;
+	pc.cmd_black = 0x00; pc.cmd_white = 0xFF;
 
 	pc.levels = 2;
 	bench("dither, state model", &pc, w, h, iters);
